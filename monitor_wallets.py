@@ -15,7 +15,6 @@ CHAT_ID = os.environ.get('CHAT_ID', '')
 WALLETS_FILE = 'wallets.json'
 STATE_FILE = 'state.yaml'
 LAST_DATE_FILE = 'last_date.txt'
-LAST_UPDATE_FILE = 'last_update_id.txt'
 SOLANA_RPC = 'https://api.mainnet-beta.solana.com'
 
 # ============== مدیریت فایل‌ها ==============
@@ -49,16 +48,6 @@ def save_last_date(date):
     with open(LAST_DATE_FILE, 'w') as f:
         f.write(date)
 
-def load_last_update_id():
-    if os.path.exists(LAST_UPDATE_FILE):
-        with open(LAST_UPDATE_FILE, 'r') as f:
-            return int(f.read().strip())
-    return 0
-
-def save_last_update_id(update_id):
-    with open(LAST_UPDATE_FILE, 'w') as f:
-        f.write(str(update_id))
-
 # ============== پیام تلگرام ==============
 def send_telegram_message(message):
     try:
@@ -77,59 +66,58 @@ def send_telegram_message(message):
 
 # ============== دریافت ولت جدید از تلگرام ==============
 def get_new_wallets_from_telegram():
-    """دریافت ولت‌های جدید از تلگرام"""
+    """دریافت ولت‌های جدید از تلگرام - ساده و تضمینی"""
     try:
-        print("📡 بررسی پیام‌های تلگرام...")
+        print("📡 شروع دریافت پیام‌های تلگرام...")
+        print(f"🤖 توکن: {TELEGRAM_TOKEN[:10]}...")
         
-        # ===== دریافت آخرین update_id پردازش شده =====
-        last_update_id = load_last_update_id()
-        print(f"🆔 آخرین update_id پردازش شده: {last_update_id}")
+        # ===== ۱. ریست کامل offset =====
+        reset_url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset=-1'
+        requests.get(reset_url)
+        print("✅ offset تلگرام ریست شد")
         
-        # ===== دریافت پیام‌های جدید =====
+        # ===== ۲. دریافت همه پیام‌ها =====
         url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates'
-        if last_update_id > 0:
-            url += f'?offset={last_update_id + 1}'
-        
         response = requests.get(url, timeout=10)
         data = response.json()
         
         if not data.get('ok'):
-            print("❌ خطا در ارتباط با تلگرام")
+            print("❌ خطا در ارتباط با تلگرام API")
             return []
         
         messages = data.get('result', [])
+        print(f"📨 تعداد کل پیام‌ها: {len(messages)}")
+        
         if not messages:
-            print("📭 پیام جدیدی نیست")
+            print("📭 هیچ پیامی در صف نیست")
             return []
         
-        print(f"📨 {len(messages)} پیام جدید دریافت شد")
-        
+        # ===== ۳. بررسی همه پیام‌ها =====
         new_wallets = []
-        max_update_id = last_update_id
-        
         for msg in messages:
-            update_id = msg['update_id']
-            max_update_id = max(max_update_id, update_id)
-            
             if 'message' in msg and 'text' in msg['message']:
                 text = msg['message']['text'].strip()
-                print(f"📝 متن پیام: {text[:30]}...")
+                print(f"📝 پیام دریافتی: {text[:30]}...")
                 
                 # بررسی آدرس ولت
                 if len(text) in [43, 44] and text[0].isalpha() and text.isalnum():
                     new_wallets.append(text)
-                    print(f"✅ آدرس ولت شناسایی شد: {text[:10]}...")
+                    print(f"✅ آدرس ولت معتبر: {text[:10]}...")
+                else:
+                    print(f"⏭️ پیام عادی: {text[:20]}...")
         
-        # ===== ذخیره آخرین update_id =====
-        if max_update_id > last_update_id:
-            save_last_update_id(max_update_id)
-            print(f"💾 آخرین update_id ذخیره شد: {max_update_id}")
+        # ===== ۴. پاک کردن همه پیام‌ها =====
+        if messages:
+            last_id = messages[-1]['update_id']
+            clean_url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={last_id + 1}'
+            requests.get(clean_url)
+            print(f"🧹 {len(messages)} پیام پاک شد")
         
-        print(f"🎯 {len(new_wallets)} ولت جدید پیدا شد")
+        print(f"🎯 ولت‌های جدید پیدا شده: {len(new_wallets)}")
         return new_wallets
         
     except Exception as e:
-        print(f"❌ خطا در دریافت پیام: {e}")
+        print(f"❌ خطای سیستمی: {e}")
         return []
 
 # ============== ولت‌ها ==============
@@ -189,12 +177,15 @@ def send_daily_report(wallets_count):
 
 # ============== اصلی ==============
 def main():
+    print("="*50)
     print("🚀 شروع اجرای اسکریپت...")
     print(f"✅ توکن: {TELEGRAM_TOKEN[:10]}...")
     print(f"✅ چت آیدی: {CHAT_ID}")
+    print("="*50)
     
     # ===== ۱. دریافت ولت‌های جدید از تلگرام =====
     new_wallets = get_new_wallets_from_telegram()
+    print(f"📦 ولت‌های جدید: {new_wallets}")
     
     # ===== ۲. بارگذاری ولت‌های فعلی =====
     current_wallets = load_wallets()
@@ -247,7 +238,9 @@ def main():
         save_state({**state, **new_state})
         print("💾 وضعیت تراکنش‌ها ذخیره شد")
     
+    print("="*50)
     print("✅ اجرا پایان یافت")
+    print("="*50)
 
 if __name__ == "__main__":
     main()
