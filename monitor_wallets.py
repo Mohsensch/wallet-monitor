@@ -8,8 +8,8 @@ import time
 
 # -------------------- تنظیمات اجباری --------------------
 # توکن و چت آیدی تو - کاملاً آماده
-TELEGRAM_TOKEN = '8307268908:AAGU1iwmlBFq70fQAOOwpprF-pcm8TIxlls'
-CHAT_ID = '8188301472'
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '')
+CHAT_ID = os.environ.get('CHAT_ID', '')
 # -------------------------------------------------------
 
 # لیست والت‌های Solana برای نظارت
