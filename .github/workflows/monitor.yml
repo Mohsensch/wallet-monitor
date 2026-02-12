@@ -2,7 +2,7 @@ name: Monitor Solana Wallets
 
 on:
   schedule:
- - cron: '0 * * * *'  # ⏰ هر ساعت یکبار، رأس ساعت (کاملاً رایگان)
+    - cron: '0 * * * *'  # ⏰ هر ساعت یکبار، رأس ساعت (کاملاً رایگان)
   workflow_dispatch:        # برای اجرای دستی از تب Actions
 
 jobs:
