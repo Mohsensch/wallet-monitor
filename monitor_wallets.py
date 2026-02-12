@@ -48,8 +48,8 @@ def save_last_date(date):
     with open(LAST_DATE_FILE, 'w') as f:
         f.write(date)
 
-# ============== پیام تلگرام ==============
-def send_telegram_message(message):
+# ============== پیام تلگرام با کیبورد ==============
+def send_telegram_message(message, keyboard=None):
     try:
         url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
         payload = {
@@ -57,70 +57,165 @@ def send_telegram_message(message):
             'text': message,
             'parse_mode': 'Markdown'
         }
+        if keyboard:
+            payload['reply_markup'] = json.dumps(keyboard)
+        
         response = requests.post(url, json=payload, timeout=10)
-        print(f"📤 ارسال پیام: {message[:50]}...")
         return response
     except Exception as e:
         print(f"❌ خطا در ارسال پیام: {e}")
         return None
 
-# ============== دریافت ولت جدید از تلگرام ==============
-def get_new_wallets_from_telegram():
-    """دریافت ولت‌های جدید از تلگرام - ساده و تضمینی"""
+# ============== منوی اصلی ==============
+def main_menu():
+    keyboard = {
+        "keyboard": [
+            ["📋 لیست ولت‌ها", "➕ اضافه کردن ولت"],
+            ["❌ حذف ولت", "📊 گزارش امروز"],
+            ["🔄 بررسی تراکنش‌ها", "ℹ️ وضعیت ربات"]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False
+    }
+    return keyboard
+
+# ============== دریافت پیام‌های تلگرام ==============
+def get_telegram_updates():
     try:
-        print("📡 شروع دریافت پیام‌های تلگرام...")
-        print(f"🤖 توکن: {TELEGRAM_TOKEN[:10]}...")
-        
-        # ===== ۱. ریست کامل offset =====
-        reset_url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset=-1'
-        requests.get(reset_url)
-        print("✅ offset تلگرام ریست شد")
-        
-        # ===== ۲. دریافت همه پیام‌ها =====
         url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates'
         response = requests.get(url, timeout=10)
         data = response.json()
         
         if not data.get('ok'):
-            print("❌ خطا در ارتباط با تلگرام API")
             return []
         
         messages = data.get('result', [])
-        print(f"📨 تعداد کل پیام‌ها: {len(messages)}")
-        
         if not messages:
-            print("📭 هیچ پیامی در صف نیست")
             return []
         
-        # ===== ۳. بررسی همه پیام‌ها =====
-        new_wallets = []
+        commands = []
+        last_update_id = 0
+        
         for msg in messages:
+            update_id = msg['update_id']
+            last_update_id = max(last_update_id, update_id)
+            
             if 'message' in msg and 'text' in msg['message']:
                 text = msg['message']['text'].strip()
-                print(f"📝 پیام دریافتی: {text[:30]}...")
-                
-                # بررسی آدرس ولت
-                if len(text) in [43, 44] and text[0].isalpha() and text.isalnum():
-                    new_wallets.append(text)
-                    print(f"✅ آدرس ولت معتبر: {text[:10]}...")
-                else:
-                    print(f"⏭️ پیام عادی: {text[:20]}...")
+                commands.append(text)
         
-        # ===== ۴. پاک کردن همه پیام‌ها =====
-        if messages:
-            last_id = messages[-1]['update_id']
-            clean_url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={last_id + 1}'
+        # پاک کردن پیام‌ها
+        if last_update_id > 0:
+            clean_url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={last_update_id + 1}'
             requests.get(clean_url)
-            print(f"🧹 {len(messages)} پیام پاک شد")
         
-        print(f"🎯 ولت‌های جدید پیدا شده: {len(new_wallets)}")
-        return new_wallets
+        return commands
         
     except Exception as e:
-        print(f"❌ خطای سیستمی: {e}")
+        print(f"❌ خطا در دریافت پیام: {e}")
         return []
 
-# ============== ولت‌ها ==============
+# ============== پردازش دستورات ==============
+def process_commands(commands):
+    wallets = load_wallets()
+    responses = []
+    
+    for cmd in commands:
+        # ===== اضافه کردن ولت =====
+        if len(cmd) in [43, 44] and cmd[0].isalpha() and cmd.isalnum():
+            if cmd not in wallets:
+                wallets.append(cmd)
+                save_wallets(wallets)
+                responses.append(f"✅ ولت `{cmd[:8]}...{cmd[-8:]}` با موفقیت اضافه شد!")
+            else:
+                responses.append(f"⚠️ این ولت قبلاً اضافه شده!")
+        
+        # ===== لیست ولت‌ها =====
+        elif cmd == "📋 لیست ولت‌ها":
+            if not wallets:
+                responses.append("📭 لیست ولت‌ها خالی است!")
+            else:
+                msg = "📋 **لیست ولت‌ها:**\n\n"
+                for i, w in enumerate(wallets, 1):
+                    msg += f"{i}. `{w[:8]}...{w[-8:]}`\n"
+                msg += f"\n📊 **تعداد کل:** {len(wallets)}"
+                responses.append(msg)
+        
+        # ===== اضافه کردن ولت (دستی) =====
+        elif cmd == "➕ اضافه کردن ولت":
+            responses.append("📝 لطفاً آدرس ولت را بفرستید:")
+        
+        # ===== حذف ولت =====
+        elif cmd == "❌ حذف ولت":
+            if not wallets:
+                responses.append("📭 لیست ولت‌ها خالی است!")
+            else:
+                keyboard = {"keyboard": [], "resize_keyboard": True}
+                row = []
+                for i, w in enumerate(wallets, 1):
+                    short = f"{w[:4]}...{w[-4:]}"
+                    row.append(f"حذف {i}")
+                    if len(row) == 3:
+                        keyboard["keyboard"].append(row)
+                        row = []
+                if row:
+                    keyboard["keyboard"].append(row)
+                keyboard["keyboard"].append(["🔙 بازگشت"])
+                
+                msg = "❌ **ولت مورد نظر برای حذف را انتخاب کنید:**\n\n"
+                for i, w in enumerate(wallets, 1):
+                    msg += f"{i}. `{w[:8]}...{w[-8:]}`\n"
+                
+                send_telegram_message(msg, keyboard)
+                return []
+        
+        # ===== حذف ولت خاص =====
+        elif cmd.startswith("حذف "):
+            try:
+                index = int(cmd.split()[1]) - 1
+                if 0 <= index < len(wallets):
+                    removed = wallets.pop(index)
+                    save_wallets(wallets)
+                    responses.append(f"✅ ولت `{removed[:8]}...{removed[-8:]}` حذف شد!")
+                else:
+                    responses.append("❌ شماره ولت نامعتبر است!")
+            except:
+                responses.append("❌ خطا در حذف ولت!")
+        
+        # ===== گزارش امروز =====
+        elif cmd == "📊 گزارش امروز":
+            now = datetime.now()
+            today = now.strftime("%Y-%m-%d")
+            weekdays = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه", "یکشنبه"]
+            weekday = weekdays[now.weekday()]
+            
+            msg = f"📊 **گزارش امروز - {today}**\n"
+            msg += f"📆 {weekday}\n\n"
+            msg += f"👁️ **ولت‌های تحت نظارت:** {len(wallets)}\n"
+            msg += f"🟢 **وضعیت:** فعال"
+            responses.append(msg)
+        
+        # ===== بررسی تراکنش‌ها =====
+        elif cmd == "🔄 بررسی تراکنش‌ها":
+            responses.append("🔄 در حال بررسی تراکنش‌ها...")
+            # اینجا میتونی تابع check_all_wallets رو صدا بزنی
+        
+        # ===== وضعیت ربات =====
+        elif cmd == "ℹ️ وضعیت ربات":
+            msg = "🤖 **وضعیت ربات:**\n\n"
+            msg += f"✅ **وضعیت:** فعال\n"
+            msg += f"📊 **ولت‌ها:** {len(wallets)}\n"
+            msg += f"⏰ **آخرین اجرا:** {datetime.now().strftime('%H:%M:%S')}\n"
+            msg += f"🔗 **شبکه:** Solana Mainnet"
+            responses.append(msg)
+        
+        # ===== بازگشت =====
+        elif cmd == "🔙 بازگشت":
+            responses.append("🔙 بازگشت به منوی اصلی")
+    
+    return responses
+
+# ============== بررسی تراکنش‌ها ==============
 def get_recent_transactions(wallet):
     try:
         client = Client(SOLANA_RPC)
@@ -132,29 +227,35 @@ def get_recent_transactions(wallet):
         print(f"❌ خطا در دریافت تراکنش {wallet[:10]}: {e}")
         return []
 
-def check_wallet(wallet, last_signature):
-    transactions = get_recent_transactions(wallet)
-    if not transactions:
-        return None, last_signature
+def check_all_wallets():
+    wallets = load_wallets()
+    if not wallets:
+        return
     
-    current_first_sig = transactions[0].signature if transactions else None
+    state = load_state()
+    new_state = {}
     
-    for tx in transactions:
-        if tx.signature == last_signature:
-            break
+    for wallet in wallets:
+        last_sig = state.get(wallet)
+        transactions = get_recent_transactions(wallet)
         
-        if tx.block_time:
-            tx_time = datetime.fromtimestamp(tx.block_time).strftime("%H:%M:%S")
-            message = f"🔔 **والت {wallet[:8]}...{wallet[-8:]}**\n"
-            message += f"🕐 {tx_time} - تراکنش جدید\n"
-            message += f"🔗 [مشاهده در Solscan](https://solscan.io/tx/{tx.signature})"
-            send_telegram_message(message)
-            return current_first_sig, current_first_sig
+        if transactions:
+            current_sig = transactions[0].signature
+            if current_sig != last_sig:
+                if transactions[0].block_time:
+                    tx_time = datetime.fromtimestamp(transactions[0].block_time).strftime("%H:%M:%S")
+                    message = f"🔔 **والت {wallet[:8]}...{wallet[-8:]}**\n"
+                    message += f"🕐 {tx_time} - تراکنش جدید\n"
+                    message += f"🔗 [مشاهده در Solscan](https://solscan.io/tx/{current_sig})"
+                    send_telegram_message(message)
+                    new_state[wallet] = current_sig
     
-    return None, last_signature
+    if new_state:
+        save_state({**state, **new_state})
 
 # ============== گزارش روزانه ==============
-def send_daily_report(wallets_count):
+def send_daily_report():
+    wallets = load_wallets()
     now = datetime.now()
     today = now.strftime("%Y-%m-%d")
     last_date = load_last_date()
@@ -166,81 +267,35 @@ def send_daily_report(wallets_count):
         message = f"🌅 **گزارش روزانه - {today}**\n"
         message += f"📆 {weekday}\n\n"
         message += f"🤖 ربات نظارت ولت‌های Solana\n"
-        message += f"👁️ در حال پایش **{wallets_count}** ولت\n\n"
-        message += f"💡 برای اضافه کردن ولت جدید:\n"
-        message += f"آدرس ولت رو به ربات بفرست"
+        message += f"👁️ در حال پایش **{len(wallets)}** ولت\n\n"
+        message += f"💡 از منوی زیر استفاده کنید:"
         
-        send_telegram_message(message)
+        send_telegram_message(message, main_menu())
         save_last_date(today)
-        return True
-    return False
 
 # ============== اصلی ==============
 def main():
-    print("="*50)
     print("🚀 شروع اجرای اسکریپت...")
-    print(f"✅ توکن: {TELEGRAM_TOKEN[:10]}...")
-    print(f"✅ چت آیدی: {CHAT_ID}")
-    print("="*50)
     
-    # ===== ۱. دریافت ولت‌های جدید از تلگرام =====
-    new_wallets = get_new_wallets_from_telegram()
-    print(f"📦 ولت‌های جدید: {new_wallets}")
+    # ===== دریافت دستورات از تلگرام =====
+    commands = get_telegram_updates()
     
-    # ===== ۲. بارگذاری ولت‌های فعلی =====
-    current_wallets = load_wallets()
-    print(f"📋 ولت‌های فعلی: {len(current_wallets)}")
+    # ===== پردازش دستورات =====
+    if commands:
+        responses = process_commands(commands)
+        for response in responses:
+            if "بازگشت به منوی اصلی" in response:
+                send_telegram_message("🔙 منوی اصلی:", main_menu())
+            else:
+                send_telegram_message(response, main_menu())
     
-    # ===== ۳. اضافه کردن ولت‌های جدید =====
-    added_wallets = []
-    for wallet in new_wallets:
-        if wallet not in current_wallets:
-            current_wallets.append(wallet)
-            added_wallets.append(wallet)
-            print(f"✅ ولت جدید اضافه شد: {wallet[:10]}...")
+    # ===== گزارش روزانه =====
+    send_daily_report()
     
-    # ===== ۴. ذخیره ولت‌ها =====
-    if added_wallets:
-        save_wallets(current_wallets)
-        print(f"💾 ذخیره شد: {len(added_wallets)} ولت جدید")
-        
-        # پیام تأیید
-        confirm = f"✅ **{len(added_wallets)} ولت جدید اضافه شد:**\n\n"
-        for w in added_wallets:
-            confirm += f"• `{w[:8]}...{w[-8:]}`\n"
-        confirm += f"\n📊 **کل ولت‌ها:** {len(current_wallets)}"
-        send_telegram_message(confirm)
-    else:
-        print("⏭️ ولت جدیدی اضافه نشد")
+    # ===== بررسی تراکنش‌ها =====
+    check_all_wallets()
     
-    # ===== ۵. اگه ولتی نبود =====
-    if not current_wallets:
-        print("⚠️ لیست ولت‌ها خالی است!")
-        send_telegram_message("⚠️ **هشدار: لیست ولت‌ها خالی است!**\nبرای اضافه کردن ولت جدید، آدرس ولت رو به ربات بفرست.")
-        return
-    
-    # ===== ۶. گزارش روزانه =====
-    send_daily_report(len(current_wallets))
-    
-    # ===== ۷. بررسی تراکنش‌ها =====
-    state = load_state()
-    new_state = {}
-    
-    for i, wallet in enumerate(current_wallets, 1):
-        print(f"🔍 بررسی {i}/{len(current_wallets)}: {wallet[:10]}...")
-        last_sig = state.get(wallet)
-        _, new_sig = check_wallet(wallet, last_sig)
-        if new_sig:
-            new_state[wallet] = new_sig
-            print(f"💰 تراکنش جدید برای {wallet[:10]}...")
-    
-    if new_state:
-        save_state({**state, **new_state})
-        print("💾 وضعیت تراکنش‌ها ذخیره شد")
-    
-    print("="*50)
     print("✅ اجرا پایان یافت")
-    print("="*50)
 
 if __name__ == "__main__":
     main()
