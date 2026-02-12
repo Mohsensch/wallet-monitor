@@ -2,7 +2,7 @@ import requests
 import json
 import yaml
 from solana.rpc.api import Client
-from solana.rpc.types import RPCResponse
+from solana.rpc.commitment import Confirmed
 import os
 import time
 
@@ -54,8 +54,11 @@ def send_telegram_message(message):
 def get_recent_transactions(wallet):
     try:
         client = Client(SOLANA_RPC)
-        signatures = client.get_signatures_for_address(wallet, limit=5)
-        return signatures.value if isinstance(signatures, RPCResponse) else []
+        # دریافت آخرین ۵ تراکنش والت
+        response = client.get_signatures_for_address(wallet, limit=5)
+        if response and hasattr(response, 'value'):
+            return response.value
+        return []
     except Exception as e:
         print(f"❌ خطا در دریافت تراکنش‌های {wallet[:10]}: {e}")
         return []
