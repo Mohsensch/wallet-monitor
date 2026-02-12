@@ -5,9 +5,9 @@ from solana.rpc.api import Client
 from solana.rpc.commitment import Confirmed
 import os
 import time
+from datetime import datetime
 
 # -------------------- تنظیمات اجباری --------------------
-# توکن و چت آیدی تو - کاملاً آماده
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '')
 CHAT_ID = os.environ.get('CHAT_ID', '')
 # -------------------------------------------------------
@@ -29,6 +29,7 @@ WALLETS = [
 # RPC عمومی رایگان Solana
 SOLANA_RPC = 'https://api.mainnet-beta.solana.com'
 STATE_FILE = 'state.yaml'
+LAST_DATE_FILE = 'last_date.txt'  # فایل برای ذخیره آخرین تاریخ ارسال پیام
 
 def load_state():
     if os.path.exists(STATE_FILE):
@@ -40,6 +41,16 @@ def save_state(state):
     with open(STATE_FILE, 'w') as f:
         yaml.safe_dump(state, f)
 
+def load_last_date():
+    if os.path.exists(LAST_DATE_FILE):
+        with open(LAST_DATE_FILE, 'r') as f:
+            return f.read().strip()
+    return None
+
+def save_last_date(date):
+    with open(LAST_DATE_FILE, 'w') as f:
+        f.write(date)
+
 def send_telegram_message(message):
     try:
         url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
@@ -50,6 +61,29 @@ def send_telegram_message(message):
     except Exception as e:
         print(f"❌ خطا در ارسال پیام: {e}")
         return None
+
+def send_daily_message():
+    """ارسال پیام روزانه"""
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    last_date = load_last_date()
+    
+    # اگه امروز هنوز پیام نفرستاده باشیم
+    if last_date != today:
+        # تاریخ شمسی تقریبی (برای دقیق تر نیاز به کتابخانه jdatetime هست)
+        weekdays = ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه", "یکشنبه"]
+        weekday = weekdays[now.weekday()]
+        
+        message = f"🌅 **گزارش روزانه - {today}**\n"
+        message += f"📆 {weekday}\n\n"
+        message += "🤖 ربات نظارت والت‌های Solana فعال است.\n"
+        message += "🟢 در حال پایش ۱۰ والت برای تراکنش‌های جدید..."
+        
+        send_telegram_message(message)
+        save_last_date(today)
+        print(f"📅 پیام روزانه ارسال شد: {today}")
+        return True
+    return False
 
 def get_recent_transactions(wallet):
     try:
@@ -74,11 +108,15 @@ def check_wallet(wallet, last_signature):
         if tx.signature == last_signature:
             break
         
-        new_transactions.append(f"تراکنش جدید: {tx.signature[:10]}...")
+        # گرفتن زمان تراکنش
+        tx_time = datetime.fromtimestamp(tx.block_time).strftime("%H:%M:%S") if tx.block_time else "نامشخص"
+        new_transactions.append(f"🕐 {tx_time} - تراکنش جدید: `{tx.signature[:8]}...{tx.signature[-8:]}`")
         break
     
     if new_transactions:
-        message = f"🔔 **والت {wallet[:8]}...{wallet[-8:]}**\n{new_transactions[0]}"
+        message = f"🔔 **والت {wallet[:8]}...{wallet[-8:]}**\n"
+        message += f"{new_transactions[0]}\n"
+        message += f"🔗 [مشاهده در Solscan](https://solscan.io/tx/{tx.signature})"
         send_telegram_message(message)
         return current_first_sig, current_first_sig
     
@@ -88,6 +126,9 @@ def main():
     print("🚀 شروع اجرای اسکریپت...")
     print(f"✅ توکن تنظیم شد: {TELEGRAM_TOKEN[:10]}...")
     print(f"✅ چت آیدی تنظیم شد: {CHAT_ID}")
+    
+    # ارسال پیام روزانه
+    send_daily_message()
     
     state = load_state()
     print(f"📂 وضعیت قبلی: {state}")
