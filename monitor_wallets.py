@@ -66,7 +66,7 @@ def send_telegram_message(message):
 
 # ============== دریافت ولت جدید از تلگرام ==============
 def get_new_wallets_from_telegram():
-    """دریافت مستقیم ولت‌های جدید از تلگرام"""
+    """دریافت ولت‌های جدید از تلگرام - بدون حذف دائمی"""
     try:
         print("📡 بررسی پیام‌های تلگرام...")
         
@@ -101,12 +101,12 @@ def get_new_wallets_from_telegram():
                 if len(text) in [43, 44] and text[0].isalpha() and text.isalnum():
                     new_wallets.append(text)
                     print(f"✅ آدرس ولت شناسایی شد: {text[:10]}...")
+                else:
+                    print(f"⏭️ پیام نادیده گرفته شد (آدرس ولت نیست): {text[:20]}...")
         
-        # پاک کردن پیام‌های پردازش شده
+        # فقط آخرین update_id رو ثبت میکنیم، پیام‌ها رو پاک نمیکنیم
         if last_update_id > 0:
-            clean_url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={last_update_id + 1}'
-            requests.get(clean_url)
-            print(f"🧹 پیام‌ها پاک شدند (update_id: {last_update_id})")
+            print(f"🆔 آخرین update_id: {last_update_id}")
         
         return new_wallets
         
