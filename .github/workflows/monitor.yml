@@ -26,5 +26,8 @@ jobs:
     - name: 📋 لیست فایل‌ها (برای اطمینان)
       run: ls -la
     
-    - name: 🚀 اجرای اسکریپت نظارت
+       - name: 🚀 اجرای اسکریپت نظارت
+      env:
+        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        CHAT_ID: ${{ secrets.CHAT_ID }}
       run: python monitor_wallets.py
