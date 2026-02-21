@@ -2,7 +2,7 @@ name: Monitor Solana Wallets
 
 on:
   schedule:
-    - cron: '*/20 * * * *'          # هر ۲۰ دقیقه اجرا شود
+    - cron: '*/60 * * * *'          # هر ۲۰ دقیقه اجرا شود
   workflow_dispatch:                # امکان اجرای دستی هم داشته باشد
 
 jobs:
