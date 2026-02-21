@@ -6,7 +6,7 @@ from solana.rpc.commitment import Confirmed
 import os
 import time
 from datetime import datetime
-from solders.pubkey import Pubkey  # ← این خط جدید اضافه شد
+from solders.pubkey import Pubkey
 
 # -------------------- تنظیمات --------------------
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '')
@@ -210,7 +210,7 @@ def process_commands(commands):
 def get_recent_transactions(wallet):
     try:
         client = Client(SOLANA_RPC)
-        pubkey = Pubkey.from_string(wallet)  # تبدیل رشته به Pubkey
+        pubkey = Pubkey.from_string(wallet)
         
         resp = client.get_signatures_for_address(
             pubkey,
@@ -240,15 +240,25 @@ def check_all_wallets():
         signatures = get_recent_transactions(wallet)
 
         if not signatures:
+            print(f"هیچ تراکنشی برای {wallet[:8]}... برنگشت")
             continue
 
+        newest_sig = signatures[0].signature  # جدیدترین signature در لیست
+
+        if last_sig is None:
+            # والت جدید اضافه شده → فقط وضعیت فعلی رو ذخیره کن، گزارش نده
+            new_state[wallet] = newest_sig
+            print(f"والِت جدید {wallet[:8]}... → فقط آخرین sig ذخیره شد (بدون ارسال نوتیفیکیشن قدیمی)")
+            continue
+
+        # والت قبلاً وجود داشته → چک کن آیا چیزی جدیدتر از last_sig هست
         new_txs = []
 
         for sig_info in signatures:
             sig = sig_info.signature
 
-            if last_sig is not None and sig == last_sig:
-                break
+            if sig == last_sig:
+                break  # بقیه قدیمی‌تر هستند
 
             time_str = "زمان نامشخص"
             if sig_info.block_time:
@@ -258,9 +268,9 @@ def check_all_wallets():
             new_txs.append((time_str, sig))
 
         if new_txs:
-            new_txs.reverse()
+            new_txs.reverse()  # نمایش از قدیمی به جدید
 
-            print(f"→ {wallet[:8]}... : {len(new_txs)} تراکنش جدید")
+            print(f"→ {wallet[:8]}... : {len(new_txs)} تراکنش جدید پیدا شد")
 
             for time_str, sig in new_txs:
                 message = (
@@ -270,9 +280,9 @@ def check_all_wallets():
                     f"🔗 [Solscan](https://solscan.io/tx/{sig})"
                 )
                 send_telegram_message(message)
-                time.sleep(0.8)
+                time.sleep(0.8)  # جلوگیری از rate limit تلگرام
 
-            new_state[wallet] = signatures[0].signature
+            new_state[wallet] = newest_sig
 
     if new_state != state:
         save_state(new_state)
