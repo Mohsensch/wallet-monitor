@@ -2,8 +2,8 @@ name: Monitor Solana Wallets
 
 on:
   schedule:
-    - cron: '*/20 * * * *'          # هر ۲۰ دقیقه – می‌تونی تنظیم کنی
-  workflow_dispatch:                # دکمه دستی هم داشته باشه
+    - cron: '*/20 * * * *'          # هر ۲۰ دقیقه اجرا شود
+  workflow_dispatch:                # امکان اجرای دستی هم داشته باشد
 
 jobs:
   monitor:
@@ -13,7 +13,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GH_PAT }}          # ← این خط مهم است
+        token: ${{ secrets.GH_PAT }}          # ← استفاده از توکنی که ساختی
 
     - name: Set up Python
       uses: actions/setup-python@v5
