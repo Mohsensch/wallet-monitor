@@ -6,6 +6,7 @@ from solana.rpc.commitment import Confirmed
 import os
 import time
 from datetime import datetime
+from solders.pubkey import Pubkey  # ← این خط جدید اضافه شد
 
 # -------------------- تنظیمات --------------------
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '')
@@ -61,10 +62,10 @@ def send_telegram_message(message, keyboard=None):
         
         response = requests.post(url, json=payload, timeout=12)
         if not response.ok:
-            print(f"تلگرام خطا داد: {response.text[:180]}")
+            print(f"تلگرام خطا: {response.text[:180]}")
         return response.ok
     except Exception as e:
-        print(f"❌ خطا ارسال پیام تلگرام: {e}")
+        print(f"❌ خطا ارسال تلگرام: {e}")
         return False
 
 # ============== منوی اصلی ==============
@@ -80,7 +81,7 @@ def main_menu():
     }
     return keyboard
 
-# ============== دریافت آپدیت‌های تلگرام ==============
+# ============== دریافت آپدیت تلگرام ==============
 def get_telegram_updates():
     try:
         url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates'
@@ -105,7 +106,6 @@ def get_telegram_updates():
                 text = msg['message']['text'].strip()
                 commands.append(text)
         
-        # acknowledge آپدیت‌ها
         if last_update_id > 0:
             requests.get(
                 f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={last_update_id + 1}'
@@ -114,7 +114,7 @@ def get_telegram_updates():
         return commands
     
     except Exception as e:
-        print(f"❌ خطا در گرفتن آپدیت تلگرام: {e}")
+        print(f"❌ خطا گرفتن آپدیت تلگرام: {e}")
         return []
 
 # ============== پردازش دستورات ==============
@@ -125,14 +125,13 @@ def process_commands(commands):
     for cmd in commands:
         cmd = cmd.strip()
         
-        # اضافه کردن ولت با ارسال آدرس
         if len(cmd) in [43, 44] and cmd[0].isalpha() and cmd.isalnum():
             if cmd not in wallets:
                 wallets.append(cmd)
                 save_wallets(wallets)
                 responses.append(f"✅ ولت اضافه شد:\n`{cmd[:8]}...{cmd[-8:]}`")
             else:
-                responses.append("⚠️ این آدرس قبلاً اضافه شده است")
+                responses.append("⚠️ این آدرس قبلاً اضافه شده")
         
         elif cmd == "📋 لیست ولت‌ها":
             if not wallets:
@@ -145,7 +144,7 @@ def process_commands(commands):
                 responses.append(msg)
         
         elif cmd == "➕ اضافه کردن ولت":
-            responses.append("لطفاً آدرس کامل ولت را بفرستید (۴۴ کاراکتر)")
+            responses.append("لطفاً آدرس کامل ولت را بفرستید")
         
         elif cmd == "❌ حذف ولت":
             if not wallets:
@@ -167,7 +166,7 @@ def process_commands(commands):
                 for i, w in enumerate(wallets, 1):
                     msg += f"{i}. `{w[:8]}...{w[-8:]}`\n"
                 send_telegram_message(msg, keyboard)
-                return []  # منتظر انتخاب می‌مانیم
+                return []
         
         elif cmd.startswith("حذف "):
             try:
@@ -188,8 +187,7 @@ def process_commands(commands):
             weekday = weekdays[now.weekday()]
             
             msg = f"📊 **گزارش امروز – {today}**\n{weekday}\n\n"
-            msg += f"تعداد ولت تحت نظارت: {len(wallets)}\n"
-            msg += "وضعیت: فعال"
+            msg += f"تعداد ولت: {len(wallets)}\nوضعیت: فعال"
             responses.append(msg)
         
         elif cmd == "🔄 بررسی تراکنش‌ها":
@@ -208,12 +206,14 @@ def process_commands(commands):
     
     return responses
 
-# ============== بررسی تراکنش‌ها (بخش اصلی اصلاح‌شده) ==============
+# ============== بررسی تراکنش‌ها ==============
 def get_recent_transactions(wallet):
     try:
         client = Client(SOLANA_RPC)
+        pubkey = Pubkey.from_string(wallet)  # تبدیل رشته به Pubkey
+        
         resp = client.get_signatures_for_address(
-            wallet,
+            pubkey,
             limit=15,
             commitment=Confirmed
         )
@@ -247,7 +247,6 @@ def check_all_wallets():
         for sig_info in signatures:
             sig = sig_info.signature
 
-            # اگر به آخرین sig شناخته‌شده رسیدیم → بقیه قدیمی هستند
             if last_sig is not None and sig == last_sig:
                 break
 
@@ -259,7 +258,7 @@ def check_all_wallets():
             new_txs.append((time_str, sig))
 
         if new_txs:
-            new_txs.reverse()  # قدیمی → جدید
+            new_txs.reverse()
 
             print(f"→ {wallet[:8]}... : {len(new_txs)} تراکنش جدید")
 
@@ -271,9 +270,8 @@ def check_all_wallets():
                     f"🔗 [Solscan](https://solscan.io/tx/{sig})"
                 )
                 send_telegram_message(message)
-                time.sleep(0.8)   # جلوگیری از rate limit تلگرام
+                time.sleep(0.8)
 
-            # به‌روزرسانی آخرین signature
             new_state[wallet] = signatures[0].signature
 
     if new_state != state:
@@ -301,14 +299,12 @@ def send_daily_report():
         send_telegram_message(message, main_menu())
         save_last_date(today)
 
-# ============== حلقه اصلی ==============
+# ============== اصلی ==============
 def main():
     print("اسکریپت شروع شد ...")
     
-    # گزارش روزانه (در صورت نیاز)
     send_daily_report()
     
-    # گرفتن دستورات تلگرام
     commands = get_telegram_updates()
     
     if commands:
@@ -319,7 +315,6 @@ def main():
             else:
                 send_telegram_message(resp, main_menu())
     
-    # همیشه چک کردن تراکنش‌ها (حتی بدون دستور)
     check_all_wallets()
     
     print("اجرای این دور تمام شد")
